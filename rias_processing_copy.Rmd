@@ -1,0 +1,358 @@
+---
+title: "CONNECTS RIAS processing"
+author: "Chenery Lowe"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# load packages
+library(dplyr)
+library(tidyverse)
+library(readxl)
+
+```
+
+# Load data
+```{r}
+
+### ENTER EXPORTED ACCESS FILE NAME HERE!!! (.XLSX FORMAT) ####
+dat <- read_excel("YOUR FILE NAME HERE.XLSX")
+
+```
+# Relabel variable names
+```{r}
+# recode variable names
+RIAS<- dat %>% mutate(szCategoryDescription = dplyr::recode(szCategoryDescription, 
+                                   "personal" = "pers",
+                                   "?bid" = "bid",
+                                   "?ls" = "ols",
+                                   "?med" = "omed",
+                                   "?opinion" = "asko",
+                                   "?other" = "ooth",
+                                   "?permission" = "askp",
+                                   "?ps" = "ops",
+                                   "?reassure" = "askr",
+                                   "?service" = "asks",
+                                   "?thera" = "other",
+                                   "?understand" = "asku",
+                                   "[?] ls" = "cls",
+                                   "[?] med" = "cmed",
+                                   "[?] other" = "coth",
+                                   "[?] ps" = "cps",
+                                   "[?] thera" = "cther",
+                                   "[?] other" = "coth",
+                                   "agree" = "agre",
+                                   "approve" = "app",
+                                   "BC" = "bc",
+                                   "C-ls/ps" = "cnlls",
+                                   "C-med/thera" = "cnlmd", 
+                                   "checks" = "check", 
+                                   "comp" = "comp",
+                                   "concern" = "con",
+                                   "crit" = "crit",
+                                   "disagree" = "dis",
+                                   "emp" = "emp",
+                                   "gives ls" = "ils",
+                                   "gives med" = "imed",
+                                   "gives other" = "ioth",
+                                   "gives ps" = "ips",
+                                   "gives thera" = "ither",
+                                   "laughs" = "laugh",
+                                   "legit" = "legit",
+                                   "orient" = "ori",
+                                   "partner" = "part",
+                                   "personal" = "pers",
+                                   "R/O" = "ro",
+                                   "self-dis" = "sdis",
+                                   "trans" = "tran",
+                                   "unintel" = "unint"
+                                   ))
+
+
+```
+
+# Reshape Access data as counts
+```{r}
+#reshape with counts
+library(dplyr)
+rias_wide <- RIAS%>%
+  group_by(szMediaID, szCategoryDescription, nSpeaker1) %>%
+  tally()
+
+#reshape wide with categories
+library(tidyr)
+rias<-spread(rias_wide, szCategoryDescription, n)
+
+#fill NA with 0
+rias<-mutate_all(rias, ~coalesce(.,0))
+
+
+#separate subsets for clinician and parent/child
+
+# clinician
+rias_d1<-subset(rias, nSpeaker1=="1") #index clinician to parent
+rias_d8<-subset(rias, nSpeaker1=="8") #index clinician to child
+rias_d9<-subset(rias, nSpeaker1=="9") #provider 2 to parent
+rias_d10<-subset(rias, nSpeaker1=="10") #provider 2 to child
+
+# parent
+rias_pt11<-subset(rias, nSpeaker1=="11")
+rias_pt12<-subset(rias, nSpeaker1=="12")
+rias_pt14<-subset(rias, nSpeaker1=="14")
+rias_pt15<-subset(rias, nSpeaker1=="15")
+
+#rename columns - provider as speaker
+colnames(rias_d1)<-paste0(colnames(rias_d1), "d1")
+colnames(rias_d8)<-paste0(colnames(rias_d8), "d8")
+colnames(rias_d9)<-paste0(colnames(rias_d9), "d9")
+colnames(rias_d10)<-paste0(colnames(rias_d10), "d10")
+
+#rename columns - patient as speaker
+colnames(rias_pt11)<-paste0(colnames(rias_pt11), "pt11")
+colnames(rias_pt12)<-paste0(colnames(rias_pt12), "pt12")
+colnames(rias_pt14)<-paste0(colnames(rias_pt14), "pt14")
+colnames(rias_pt15)<-paste0(colnames(rias_pt15), "pt15")
+
+
+#rename szMediaID variable
+rias_d1<-rename(rias_d1, id = szMediaIDd1)
+rias_d8<-rename(rias_d8, id = szMediaIDd8)
+rias_d9<-rename(rias_d9, id = szMediaIDd9)
+rias_d10<-rename(rias_d10, id = szMediaIDd10)
+rias_pt11<-rename(rias_pt11, id = szMediaIDpt11)
+rias_pt12<-rename(rias_pt12, id = szMediaIDpt12)
+rias_pt14<-rename(rias_pt14, id = szMediaIDpt14)
+rias_pt15<-rename(rias_pt15, id = szMediaIDpt15)
+
+
+# merge provider directions
+df_list<-list(rias_d1, rias_d8, rias_d9, rias_d10)
+rias_provider<-Reduce(function(x, y) merge(x, y, all=TRUE, by = "id"), df_list)
+
+# drop some patient-only codes
+rias_provider<-rias_provider%>%select(-contains(c("asksd")))
+
+
+# merge patient directions
+# merge all
+df_list<-list(rias_pt11, rias_pt12, rias_pt14, rias_pt15)
+rias_patient<-Reduce(function(x, y) merge(x, y, all=TRUE, by = "id"), df_list)
+
+# relabel patient questions
+library(stringr)
+rias_patient<-rias_patient%>%
+  rename_with(~str_replace(., "cmed", "qmed"))%>%
+  rename_with(~str_replace(., "cther", "qther"))%>%
+  rename_with(~str_replace(., "cls", "qls"))%>%
+  rename_with(~str_replace(., "cps", "qps"))%>%
+  rename_with(~str_replace(., "coth", "qoth"))
+
+
+# drop some provider-only codes from the patient direction (open questions, self-disclosure, etc.)
+rias_patient<-rias_patient%>%select(-contains(c("cnllspt", "cnlmdpt", 
+                                                "omedpt", "otherpt", "olspt", "opspt", "oothpt",
+                                                "askopt", "askppt", "bcpt", "partpt", "sdispt")))
+
+
+
+# merge patient and provider datasets
+df_list<-list(rias_provider, rias_patient)
+
+rias<-Reduce(function(x, y) merge(x, y, all=TRUE, by = "id"), df_list)
+
+
+```
+
+```{r}
+# Create composites for d1
+rias$medqued1<-rowSums(rias[,c("cmedd1", "ctherd1", "omedd1", "otherd1")], na.rm = TRUE)
+rias$infomedd1<-rowSums(rias[,c("imedd1", "itherd1", "cnlmdd1")], na.rm = TRUE)
+rias$psyqued1<- rowSums(rias[,c("clsd1", "cpsd1", "olsd1", "opsd1")], na.rm = TRUE)
+rias$infopsyd1<-rowSums(rias[,c("ilsd1", "ipsd1", "cnllsd1")], na.rm = TRUE)
+rias$partnerd1<-rowSums(rias[,c("askod1", "askpd1", "askud1", "bcd1", "checkd1")], na.rm = TRUE)
+rias$posd1<-rowSums(rias[,c("laughd1", "appd1", "compd1", "agred1")], na.rm = TRUE)
+rias$emod1<-rowSums(rias[,c("empd1", "cond1", "askrd1", "rod1", "partd1", "sdisd1", "legitd1")], na.rm = TRUE)
+rias$negd1<-rowSums(rias[,c("disd1", "critd1")], na.rm = TRUE)
+rias$procd1<-rowSums(rias[,c("trand1", "orid1")], na.rm = TRUE)
+
+rias$alld1<-rowSums(rias[,c((which(colnames(rias)=="bidd1")):(which(colnames(rias)=="unintd1")))], na.rm = TRUE)
+
+  
+# composites for d8
+rias$medqued8<-rowSums(rias[,c("cmedd8", "ctherd8", "omedd8", "otherd8")], na.rm = TRUE)
+rias$infomedd8<-rowSums(rias[,c("imedd8", "itherd8", "cnlmdd8")], na.rm = TRUE)
+rias$psyqued8<- rowSums(rias[,c("clsd8", "cpsd8", "olsd8", "opsd8")], na.rm = TRUE)
+rias$infopsyd8<-rowSums(rias[,c("ilsd8", "ipsd8", "cnllsd8")], na.rm = TRUE)
+rias$partnerd8<-rowSums(rias[,c("askod8", "askpd8", "askud8", "bcd8", "checkd8")], na.rm = TRUE)
+rias$posd8<-rowSums(rias[,c("laughd8", "appd8", "compd8", "agred8")], na.rm = TRUE)
+rias$emod8<-rowSums(rias[,c("empd8", "cond8", "askrd8", "rod8", "partd8", "sdisd8", "legitd8")], na.rm = TRUE)
+rias$negd8<-rowSums(rias[,c("disd8", "critd8")], na.rm = TRUE)
+rias$procd8<-rowSums(rias[,c("trand8", "orid8")], na.rm = TRUE)
+
+rias$alld8<-rowSums(rias[,c((which(colnames(rias)=="bidd8")):(which(colnames(rias)=="unintd8")))], na.rm = TRUE)
+  
+# composites for d9
+rias$medqued9<-rowSums(rias[,c("cmedd9", "ctherd9", "omedd9", "otherd9")], na.rm = TRUE)
+rias$infomedd9<-rowSums(rias[,c("imedd9", "itherd9", "cnlmdd9")], na.rm = TRUE)
+rias$psyqued9<- rowSums(rias[,c("clsd9", "cpsd9", "olsd9", "opsd9")], na.rm = TRUE)
+rias$infopsyd9<-rowSums(rias[,c("ilsd9", "ipsd9", "cnllsd9")], na.rm = TRUE)
+rias$partnerd9<-rowSums(rias[,c("askod9", "askpd9", "askud9", "bcd9", "checkd9")], na.rm = TRUE)
+rias$posd9<-rowSums(rias[,c("laughd9", "appd9", "compd9", "agred9")], na.rm = TRUE)
+rias$emod9<-rowSums(rias[,c("empd9", "cond9", "askrd9", "rod9", "partd9", "sdisd9", "legitd9")], na.rm = TRUE)
+rias$negd9<-rowSums(rias[,c("disd9", "critd9")], na.rm = TRUE)
+rias$procd9<-rowSums(rias[,c("trand9", "orid9")], na.rm = TRUE)
+
+rias$alld9<-rowSums(rias[,c((which(colnames(rias)=="bidd9")):(which(colnames(rias)=="unintd9")))], na.rm = TRUE)
+
+# composites for d10
+rias$medqued10<-rowSums(rias[,c("cmedd10", "ctherd10", "omedd10", "otherd10")], na.rm = TRUE)
+rias$infomedd10<-rowSums(rias[,c("imedd10", "itherd10", "cnlmdd10")], na.rm = TRUE)
+rias$psyqued10<- rowSums(rias[,c("clsd10", "cpsd10", "olsd10", "opsd10")], na.rm = TRUE)
+rias$infopsyd10<-rowSums(rias[,c("ilsd10", "ipsd10", "cnllsd10")], na.rm = TRUE)
+rias$partnerd10<-rowSums(rias[,c("askod10", "askpd10", "askud10", "bcd10", "checkd10")], na.rm = TRUE)
+rias$posd10<-rowSums(rias[,c("laughd10", "appd10", "compd10", "agred10")], na.rm = TRUE)
+rias$emod10<-rowSums(rias[,c("empd10", "cond10", "askrd10", "rod10", "partd10", "sdisd10", "legitd10")], na.rm = TRUE)
+rias$negd10<-rowSums(rias[,c("disd10", "critd10")], na.rm = TRUE)
+rias$procd10<-rowSums(rias[,c("trand10", "orid10")], na.rm = TRUE)
+
+rias$alld10<-rowSums(rias[,c((which(colnames(rias)=="bidd10")):(which(colnames(rias)=="unintd10")))], na.rm = TRUE)
+
+# composites for pt11
+rias$medquept11<-rowSums(rias[,c("qmedpt11", "qtherpt11")], na.rm = TRUE)
+rias$psyquept11<-rowSums(rias[,c("qlspt11", "qpspt11")], na.rm = TRUE)
+rias$infomedpt11<-rowSums(rias[,c("imedpt11", "itherpt11")], na.rm = TRUE)
+rias$infopsypt11<-rowSums(rias[,c("ipspt11", "ilspt11")], na.rm = TRUE)  
+rias$partnerpt11<-rowSums(rias[,c("askspt11", "askupt11", "checkpt11")], na.rm = TRUE)
+rias$pospt11<-rowSums(rias[,c("laughpt11", "apppt11", "comppt11", "agrept11")], na.rm = TRUE)
+rias$emopt11<-rowSums(rias[,c("conpt11", "ropt11", "askrpt11", "emppt11", "legitpt11")], na.rm = TRUE)
+rias$negpt11<-rowSums(rias[,c("dispt11", "critpt11")], na.rm = TRUE)
+rias$procpt11<-rowSums(rias[,c("tranpt11", "oript11")], na.rm = TRUE)
+rias$allpt11<-rowSums(rias[,c((which(colnames(rias)=="agrept11")):(which(colnames(rias)=="unintpt11")))], na.rm = TRUE)
+
+# composites for pt12
+rias$medquept12<-rowSums(rias[,c("qmedpt12", "qtherpt12")], na.rm = TRUE)
+rias$psyquept12<-rowSums(rias[,c("qlspt12", "qpspt12")], na.rm = TRUE)
+rias$infomedpt12<-rowSums(rias[,c("imedpt12", "itherpt12")], na.rm = TRUE)
+rias$infopsypt12<-rowSums(rias[,c("ipspt12", "ilspt12")], na.rm = TRUE)  
+rias$partnerpt12<-rowSums(rias[,c("askspt12", "askupt12", "checkpt12")], na.rm = TRUE)
+rias$pospt12<-rowSums(rias[,c("laughpt12", "apppt12", "comppt12", "agrept12")], na.rm = TRUE)
+rias$emopt12<-rowSums(rias[,c("conpt12", "ropt12", "askrpt12", "emppt12", "legitpt12")], na.rm = TRUE)
+rias$negpt12<-rowSums(rias[,c("dispt12", "critpt12")], na.rm = TRUE)
+rias$procpt12<-rowSums(rias[,c("tranpt12", "oript12")], na.rm = TRUE)
+rias$allpt12<-rowSums(rias[,c((which(colnames(rias)=="agrept12")):(which(colnames(rias)=="unintpt12")))], na.rm = TRUE)
+
+# composites for pt14
+rias$medquept14<-rowSums(rias[,c("qmedpt14", "qtherpt14")], na.rm = TRUE)
+rias$psyquept14<-rowSums(rias[,c("qlspt14", "qpspt14")], na.rm = TRUE)
+rias$infomedpt14<-rowSums(rias[,c("imedpt14", "itherpt14")], na.rm = TRUE)
+rias$infopsypt14<-rowSums(rias[,c("ipspt14", "ilspt14")], na.rm = TRUE)  
+rias$partnerpt14<-rowSums(rias[,c("askspt14", "askupt14", "checkpt14")], na.rm = TRUE)
+rias$pospt14<-rowSums(rias[,c("laughpt14", "apppt14", "comppt14", "agrept14")], na.rm = TRUE)
+rias$emopt14<-rowSums(rias[,c("conpt14", "ropt14", "askrpt14", "emppt14", "legitpt14")], na.rm = TRUE)
+rias$negpt14<-rowSums(rias[,c("dispt14", "critpt14")], na.rm = TRUE)
+rias$procpt14<-rowSums(rias[,c("tranpt14", "oript14")], na.rm = TRUE)
+rias$allpt14<-rowSums(rias[,c((which(colnames(rias)=="agrept14")):(which(colnames(rias)=="unintpt14")))], na.rm = TRUE)
+
+
+# composites for pt15
+rias$medquept15<-rowSums(rias[,c("qmedpt15", "qtherpt15")], na.rm = TRUE)
+rias$psyquept15<-rowSums(rias[,c("qlspt15", "qpspt15")], na.rm = TRUE)
+rias$infomedpt15<-rowSums(rias[,c("imedpt15", "itherpt15")], na.rm = TRUE)
+rias$infopsypt15<-rowSums(rias[,c("ipspt15", "ilspt15")], na.rm = TRUE)  
+rias$partnerpt15<-rowSums(rias[,c("askspt15", "askupt15", "checkpt15")], na.rm = TRUE)
+rias$pospt15<-rowSums(rias[,c("laughpt15", "apppt15", "comppt15", "agrept15")], na.rm = TRUE)
+rias$emopt15<-rowSums(rias[,c("conpt15", "ropt15", "askrpt15", "emppt15", "legitpt15")], na.rm = TRUE)
+rias$negpt15<-rowSums(rias[,c("dispt15", "critpt15")], na.rm = TRUE)
+rias$procpt15<-rowSums(rias[,c("tranpt15", "oript15")], na.rm = TRUE)
+rias$allpt15<-rowSums(rias[,c((which(colnames(rias)=="agrept15")):(which(colnames(rias)=="unintpt15")))], na.rm = TRUE)
+
+
+# patient-centeredness scores
+
+#index doctor to patient - numerator
+rias$ptcentd1pt11num<-rowSums(rias[,c("psyqued1", "infopsyd1", "emod1", "partnerd1", "psyquept11", "medquept11", "infopsypt11", "emopt11")], na.rm = TRUE)
+
+#index doctor to patient - denominator
+rias$ptcentd1pt11den<-rowSums(rias[,c("medqued1", "procd1", "infomedd1", "infomedpt11")], na.rm = TRUE)
+
+#index doctor to patient - patient-centeredness score
+rias$ptcentd1pt11<-round(rias$ptcentd1pt11num/rias$ptcentd1pt11den, digits = 3)
+
+
+#2nd provider to patient - numerator
+rias$ptcentd9pt14num<-rowSums(rias[,c("psyqued9", "infopsyd9", "emod9", "partnerd9", "psyquept14", "medquept14", "infopsypt14", "emopt14")], na.rm = TRUE)
+
+#2nd provider to patient - denominator
+rias$ptcentd9pt14den<-rowSums(rias[,c("medqued9", "procd9", "infomedd9", "infomedpt14")], na.rm = TRUE)
+
+#2nd provider to patient - patient-centeredness score
+rias$ptcentd9pt14<-round(rias$ptcentd9pt14num/rias$ptcentd9pt14den, digits = 3)
+
+
+```
+
+
+# Proficiencies
+```{r}
+
+# RIAS PROFICIENCIES
+rias_prof <- con%>%
+  group_by(szMediaID, szCritical) %>%
+  tally()
+
+# drop absent values
+rias_prof<-rias_prof[!(rias_prof$szCritical=="---"),]
+
+# reshape wide
+rias_prof<-spread(rias_prof, szCritical, n)
+
+# convert to factor variables
+rias_prof<-rias_prof %>% mutate_at(vars(contains("0")), funs (as.factor))
+
+# rename columns
+colnames(rias_prof)<-paste0("prof", colnames(rias_prof))
+
+# rename tape id column
+rias_prof$id = substr(rias_prof$profszMediaID, 1,8)
+
+#replace 0 with NA
+rias_prof<-rias_prof%>%
+  subset(select = c(`prof002`:`prof009`, id)) %>% 
+  mutate_at(vars(`prof002`:`prof009`),  as.character)%>%
+  mutate_at(vars(`prof002`:`prof009`),  replace_na, "0")%>%
+  mutate_at(vars(`prof002`:`prof009`),  as.numeric)
+
+# dichotomize as used vs. didn't use proficiency
+
+#dichotomize skill use as 0 or 1
+rias_prof_d <- rias_prof %>% 
+  subset(select = c(`prof002`:`prof009`, id)) %>% 
+  mutate_at(vars(`prof002`:`prof009`),  as.character)%>%
+  mutate_at(vars(`prof002`:`prof009`),  replace_na, "0")%>%
+  mutate_at(vars(`prof002`:`prof009`),  as.factor)%>%
+  mutate_at(vars(`prof002`:`prof009`), funs(dplyr::recode(.,"0" = 0, .default = 1)))
+
+
+# rename dichotomized data columns with "d_" suffix
+colnames(rias_prof_d)<-paste0(colnames(rias_prof_d), "_d")
+
+#rename id column
+rias_prof_d<-rename(rias_prof_d, "id"="id_d")
+
+# merge with RIAS
+rias<-merge(rias, rias_prof, by = "id", all = TRUE)
+rias<-merge(rias, rias_prof_d, by = "id", all = TRUE)
+
+```
+
+```{r}
+# write to CSV
+write.csv(rias, "rias.csv")
+
+
+```
+
