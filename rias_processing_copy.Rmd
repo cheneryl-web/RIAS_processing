@@ -321,20 +321,20 @@ rias_prof$id = substr(rias_prof$profszMediaID, 1,8)
 
 #replace 0 with NA
 rias_prof<-rias_prof%>%
-  subset(select = c(`prof002`:`prof009`, id)) %>% 
-  mutate_at(vars(`prof002`:`prof009`),  as.character)%>%
-  mutate_at(vars(`prof002`:`prof009`),  replace_na, "0")%>%
-  mutate_at(vars(`prof002`:`prof009`),  as.numeric)
+  subset(select = c(`prof001`:`prof009`, id)) %>% 
+  mutate_at(vars(`prof001`:`prof009`),  as.character)%>%
+  mutate_at(vars(`prof001`:`prof009`),  replace_na, "0")%>%
+  mutate_at(vars(`prof001`:`prof009`),  as.numeric)
 
 # dichotomize as used vs. didn't use proficiency
 
 #dichotomize skill use as 0 or 1
 rias_prof_d <- rias_prof %>% 
-  subset(select = c(`prof002`:`prof009`, id)) %>% 
-  mutate_at(vars(`prof002`:`prof009`),  as.character)%>%
-  mutate_at(vars(`prof002`:`prof009`),  replace_na, "0")%>%
-  mutate_at(vars(`prof002`:`prof009`),  as.factor)%>%
-  mutate_at(vars(`prof002`:`prof009`), funs(dplyr::recode(.,"0" = 0, .default = 1)))
+  subset(select = c(`prof001`:`prof009`, id)) %>% 
+  mutate_at(vars(`prof001`:`prof009`),  as.character)%>%
+  mutate_at(vars(`prof001`:`prof009`),  replace_na, "0")%>%
+  mutate_at(vars(`prof001`:`prof009`),  as.factor)%>%
+  mutate_at(vars(`prof001`:`prof009`), funs(dplyr::recode(.,"0" = 0, .default = 1)))
 
 
 # rename dichotomized data columns with "d_" suffix
